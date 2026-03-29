@@ -199,4 +199,43 @@ class PublicWorkspaceTest extends TestCase
             ->assertJsonPath('data.tasks.0.title', 'Alpha launch')
             ->assertJsonPath('data.tasks.0.priority', 'high');
     }
+
+    public function test_guest_can_create_rename_and_delete_lists(): void
+    {
+        $categoryResponse = $this->postJson('/api/categories', [
+            'name' => 'Errands',
+            'color' => '#0f766e',
+            'icon' => 'briefcase',
+        ]);
+
+        $categoryResponse
+            ->assertCreated()
+            ->assertJsonPath('name', 'Errands');
+
+        $categoryId = $categoryResponse->json('id');
+
+        $task = Task::factory()->create([
+            'category_id' => $categoryId,
+        ]);
+
+        $this->patchJson("/api/categories/{$categoryId}", [
+            'name' => 'Personal errands',
+            'color' => '#0f766e',
+            'icon' => 'briefcase',
+        ])
+            ->assertOk()
+            ->assertJsonPath('name', 'Personal errands');
+
+        $this->deleteJson("/api/categories/{$categoryId}")
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('categories', [
+            'id' => $categoryId,
+        ]);
+
+        $this->assertDatabaseHas('tasks', [
+            'id' => $task->id,
+            'category_id' => null,
+        ]);
+    }
 }

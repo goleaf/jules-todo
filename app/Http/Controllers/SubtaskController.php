@@ -54,7 +54,7 @@ class SubtaskController extends Controller
 
     public function toggle(Subtask $subtask)
     {
-        $subtask->update(['is_completed' => !$subtask->is_completed]);
+        $subtask->update(['is_completed' => ! $subtask->is_completed]);
 
         return response()->json($subtask->task->fresh()->load([
             'category:id,name,color,icon',

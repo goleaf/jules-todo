@@ -10,10 +10,11 @@ class TaskWorkspaceController extends Controller
 {
     public function __invoke(GetWorkspaceDataAction $workspace): View
     {
-        $payload = (new WorkspaceResource($workspace->handle()))->resolve();
+        $workspaceData = $workspace->handle();
+        $payload = (new WorkspaceResource($workspaceData))->resolve();
 
         return view('tasks.workspace', [
-            'workspace' => $workspace->handle(),
+            'workspace' => $workspaceData,
             'workspacePayload' => $payload,
         ]);
     }

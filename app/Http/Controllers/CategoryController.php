@@ -22,7 +22,7 @@ class CategoryController extends Controller
         ]);
 
         $category = Category::create($validated);
-        
+
         return response()->json($category, 201);
     }
 

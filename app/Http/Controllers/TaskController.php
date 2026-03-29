@@ -10,6 +10,7 @@ use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateTaskRequest;
 use App\Http\Resources\TaskResource;
 use App\Models\Task;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -20,7 +21,7 @@ class TaskController extends Controller
         return TaskResource::collection(Task::query()->workspaceData()->get());
     }
 
-    public function store(StoreTaskRequest $request): \Illuminate\Http\JsonResponse
+    public function store(StoreTaskRequest $request): JsonResponse
     {
         $task = Task::create([
             ...$request->validated(),
@@ -48,7 +49,7 @@ class TaskController extends Controller
         return new TaskResource($this->loadTask($task->fresh()));
     }
 
-    public function destroy(Task $task): \Illuminate\Http\JsonResponse
+    public function destroy(Task $task): JsonResponse
     {
         $task->delete();
 
@@ -65,7 +66,7 @@ class TaskController extends Controller
     public function bulkUpdate(
         BulkTaskRequest $request,
         ApplyBulkTaskAction $bulkAction,
-    ): \Illuminate\Http\JsonResponse|AnonymousResourceCollection {
+    ): JsonResponse|AnonymousResourceCollection {
         $result = $bulkAction->handle(
             $request->validated('task_ids'),
             $request->validated('action'),

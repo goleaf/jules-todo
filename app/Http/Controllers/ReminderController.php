@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Reminder;
-use App\Models\Task;
 use Illuminate\Http\Request;
 
 class ReminderController extends Controller
@@ -17,14 +16,14 @@ class ReminderController extends Controller
         ]);
 
         $reminder = Reminder::create($validated);
-        
+
         return response()->json($reminder, 201);
     }
 
     public function destroy(Reminder $reminder)
     {
         $reminder->delete();
-        
+
         return response()->json(null, 204);
     }
 }

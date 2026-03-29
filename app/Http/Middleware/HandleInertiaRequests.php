@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Resources\TodoListResource;
+use App\Models\TodoList;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -33,6 +35,32 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+            ],
+            'lists' => fn () => TodoListResource::collection(
+                TodoList::query()
+                    ->select([
+                        'id',
+                        'name',
+                        'color',
+                        'sort_order',
+                        'created_at',
+                        'updated_at',
+                    ])
+                    ->withCount([
+                        'todos as todos_count' => fn ($query) => $query->notInTrash(),
+                        'activeTodos as active_todos_count',
+                    ])
+                    ->ordered()
+                    ->get(),
+            )->resolve($request),
+            'default_lists' => [
+                ['id' => 'all', 'name' => 'All Tasks', 'icon' => 'layers'],
+                ['id' => 'today', 'name' => 'Today', 'icon' => 'sun'],
+                ['id' => 'trash', 'name' => 'Trash', 'icon' => 'trash-2'],
+            ],
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
             ],
         ];
     }

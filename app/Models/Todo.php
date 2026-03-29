@@ -34,9 +34,24 @@ class Todo extends Model
         'sort_order' => 'integer',
     ];
 
+    public function list(): BelongsTo
+    {
+        return $this->belongsTo(TodoList::class, 'todo_list_id');
+    }
+
     public function todoList(): BelongsTo
     {
-        return $this->belongsTo(TodoList::class);
+        return $this->list();
+    }
+
+    public function priorityRank(): int
+    {
+        return match ($this->priority) {
+            'high' => 3,
+            'medium' => 2,
+            'low' => 1,
+            default => 0,
+        };
     }
 
     public function scopeActive(Builder $query): Builder

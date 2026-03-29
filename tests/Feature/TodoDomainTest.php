@@ -73,17 +73,20 @@ class TodoDomainTest extends TestCase
 
         $completed = Todo::factory()->for($list, 'todoList')->completed()->create([
             'title' => 'Completed task',
+            'priority' => 'none',
             'due_date' => today()->copy()->subDays(2),
             'sort_order' => 4,
         ]);
 
         $trashed = Todo::factory()->for($list, 'todoList')->deleted()->create([
             'title' => 'Trashed task',
+            'priority' => 'low',
             'sort_order' => 5,
         ]);
 
         $noDate = Todo::factory()->for($list, 'todoList')->create([
             'title' => 'No date task',
+            'priority' => 'none',
             'due_date' => null,
             'sort_order' => 6,
         ]);

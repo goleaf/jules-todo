@@ -15,13 +15,14 @@ return new class extends Migration
             $table->bigIncrements('id');
             $table->foreignId('todo_list_id')
                 ->nullable()
+                ->index()
                 ->constrained('todo_lists')
                 ->nullOnDelete();
             $table->string('title', 255);
             $table->text('description')->nullable();
             $table->boolean('is_completed')->default(false)->index();
             $table->timestamp('completed_at')->nullable();
-            $table->enum('priority', ['none', 'low', 'medium', 'high'])->default('none');
+            $table->string('priority', 10)->default('none')->index();
             $table->date('due_date')->nullable()->index();
             $table->unsignedInteger('sort_order')->default(0);
             $table->boolean('is_deleted')->default(false)->index();
@@ -30,6 +31,7 @@ return new class extends Migration
 
             $table->index(['is_deleted', 'is_completed']);
             $table->index(['todo_list_id', 'sort_order']);
+            $table->index(['is_deleted', 'due_date']);
         });
     }
 

@@ -3,93 +3,129 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\BulkTodoActionRequest;
-use App\Http\Requests\FilterTodosRequest;
-use App\Http\Requests\ReorderTodosRequest;
+use App\Http\Requests\ReorderRequest;
 use App\Http\Requests\StoreTodoRequest;
 use App\Http\Requests\UpdateTodoRequest;
 use App\Http\Resources\TodoResource;
 use App\Models\Todo;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
-use Inertia\Response as InertiaResponse;
 
 class TodoController extends Controller
 {
-    public function index(FilterTodosRequest $request): AnonymousResourceCollection
+    public function index(Request $request)
     {
-        return TodoResource::collection(
-            $this->paginatedTodos($request),
-        );
-    }
-
-    public function indexPage(FilterTodosRequest $request): InertiaResponse
-    {
-        return Inertia::render('Tasks/Index', [
-            'todos' => TodoResource::collection($this->paginatedTodos($request)),
-            'filters' => $request->safe()->only([
-                'list_id',
-                'status',
-                'due_date_filter',
-                'priority_filter',
-                'sort_by',
-                'search',
-            ]),
+        $validated = $request->validate([
+            'list_id' => ['nullable', 'string'],
+            'status' => ['nullable', 'string'],
+            'due_date_filter' => ['nullable', 'string'],
+            'priority_filter' => ['nullable', 'string'],
+            'search' => ['nullable', 'string'],
+            'sort' => ['nullable', 'string'],
+            'sort_by' => ['nullable', 'string'],
         ]);
+
+        $listId = $validated['list_id'] ?? null;
+        $isTrashView = $listId === 'trash';
+
+        $query = Todo::query()
+            ->select($this->todoColumns())
+            ->with(['list:id,name,color,sort_order,created_at,updated_at']);
+
+        if ($isTrashView) {
+            $query->inTrash();
+        } else {
+            $query->notInTrash();
+
+            if ($listId === 'today') {
+                $query->dueToday();
+            } elseif ($listId !== null && $listId !== '' && $listId !== 'all') {
+                $query->where('todo_list_id', (int) $listId);
+            }
+
+            $status = $validated['status'] ?? null;
+
+            if ($status === 'active') {
+                $query->where('is_completed', false);
+            }
+
+            if ($status === 'completed') {
+                $query->where('is_completed', true);
+            }
+
+            if (array_key_exists('due_date_filter', $validated)) {
+                $query->byDueDateFilter($validated['due_date_filter']);
+            }
+
+            if (($validated['priority_filter'] ?? 'any') !== 'any') {
+                $query->byPriority($validated['priority_filter']);
+            }
+
+            if (trim((string) ($validated['search'] ?? '')) !== '') {
+                $query->search($validated['search']);
+            }
+        }
+
+        $sortOption = $validated['sort'] ?? $validated['sort_by'] ?? 'manual';
+
+        return TodoResource::collection(
+            $query
+                ->ordered($sortOption)
+                ->paginate(50)
+                ->withQueryString(),
+        );
     }
 
     public function store(StoreTodoRequest $request): JsonResponse
     {
-        $validated = $request->validated();
-        $listId = $validated['todo_list_id'] ?? null;
-
         $todo = Todo::query()->create([
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'todo_list_id' => $listId,
-            'priority' => $validated['priority'] ?? 'none',
-            'due_date' => $validated['due_date'] ?? null,
-            'sort_order' => $this->nextSortOrder($listId),
+            'title' => $request->validated('title'),
+            'description' => $request->validated('description'),
+            'todo_list_id' => $request->validated('todo_list_id'),
+            'priority' => $request->validated('priority', 'none'),
+            'due_date' => $request->validated('due_date'),
             'is_completed' => false,
             'completed_at' => null,
             'is_deleted' => false,
             'deleted_at' => null,
         ]);
 
-        return (new TodoResource($this->findTodo($todo->getKey())))
+        return (new TodoResource($todo->load('list')))
             ->response()
             ->setStatusCode(201);
     }
 
     public function show(Todo $todo): TodoResource
     {
-        return new TodoResource($this->findTodo($todo->getKey()));
+        return new TodoResource($todo->load('list'));
     }
 
     public function update(UpdateTodoRequest $request, Todo $todo): TodoResource
     {
-        $validated = $request->validated();
-        $completionState = Arr::pull($validated, 'is_completed');
+        $fields = $request->validated();
+        $completionState = Arr::pull($fields, 'is_completed');
 
-        if (array_key_exists('title', $validated) && $validated['title'] === null) {
-            unset($validated['title']);
+        if (array_key_exists('title', $fields) && $fields['title'] === null) {
+            unset($fields['title']);
         }
 
-        if (array_key_exists('priority', $validated) && $validated['priority'] === null) {
-            $validated['priority'] = 'none';
+        if (array_key_exists('priority', $fields) && $fields['priority'] === null) {
+            $fields['priority'] = 'none';
         }
 
-        if (array_key_exists('todo_list_id', $validated) && $validated['todo_list_id'] !== $todo->todo_list_id) {
-            $validated['sort_order'] = $this->nextSortOrder($validated['todo_list_id']);
-        }
-
-        if ($validated !== []) {
-            $todo->fill($validated);
-            $todo->save();
+        if (
+            array_key_exists('todo_list_id', $fields)
+            && $fields['todo_list_id'] !== $todo->todo_list_id
+            && ! array_key_exists('sort_order', $fields)
+        ) {
+            $fields['sort_order'] = $this->nextSortOrder(
+                $fields['todo_list_id'] !== null ? (int) $fields['todo_list_id'] : null,
+            );
         }
 
         if ($completionState === true && ! $todo->is_completed) {
@@ -100,115 +136,166 @@ class TodoController extends Controller
             $todo->uncomplete();
         }
 
-        return new TodoResource($this->findTodo($todo->getKey()));
+        if ($fields !== []) {
+            $todo->update($fields);
+        }
+
+        return new TodoResource($todo->fresh()->load('list'));
     }
 
     public function destroy(Todo $todo): TodoResource
     {
         $todo->moveToTrash();
 
-        return new TodoResource($this->findTodo($todo->getKey()));
+        return new TodoResource($todo->fresh()->load('list'));
     }
 
-    public function restore(Todo $todo): TodoResource
+    public function restore(Todo $todo): JsonResponse|TodoResource
     {
+        if (! $todo->is_deleted) {
+            return response()->json([
+                'message' => 'This task is not in trash',
+            ], 422);
+        }
+
         $todo->restore();
 
-        return new TodoResource($this->findTodo($todo->getKey()));
+        return new TodoResource($todo->fresh()->load('list'));
     }
 
     public function destroyPermanently(Todo $todo): JsonResponse
     {
+        if (! $todo->is_deleted) {
+            return response()->json([
+                'message' => 'This task is not in trash',
+            ], 422);
+        }
+
         $todo->delete();
 
         return response()->json(null, 204);
     }
 
-    public function bulkAction(BulkTodoActionRequest $request): AnonymousResourceCollection
+    public function bulkAction(BulkTodoActionRequest $request): JsonResponse
     {
-        $ids = $request->validated('todo_ids');
-        $action = $request->validated('action');
-        $targetListId = $request->validated('list_id');
-        $priority = $request->validated('priority');
+        $validated = $request->validated();
+        $ids = array_values($validated['todo_ids']);
+        $action = $validated['action'];
+        $targetListId = $validated['list_id'] ?? null;
+        $priority = $validated['priority'] ?? null;
 
-        DB::transaction(function () use ($ids, $action, $targetListId, $priority): void {
+        if (
+            $action === 'permanent_delete'
+            && Todo::query()
+                ->whereIn('id', $ids)
+                ->where('is_deleted', false)
+                ->exists()
+        ) {
+            return response()->json([
+                'message' => 'Only trashed tasks can be permanently deleted.',
+            ], 422);
+        }
+
+        $updatedIds = DB::transaction(function () use ($action, $ids, $priority, $targetListId): array {
+            /** @var Collection<int, Todo> $todos */
             $todos = Todo::query()
-                ->select([
-                    'id',
-                    'todo_list_id',
-                    'title',
-                    'description',
-                    'is_completed',
-                    'completed_at',
-                    'priority',
-                    'due_date',
-                    'sort_order',
-                    'is_deleted',
-                    'deleted_at',
-                    'created_at',
-                    'updated_at',
-                ])
-                ->whereKey($ids)
+                ->select($this->todoColumns())
+                ->whereIn('id', $ids)
                 ->get()
                 ->keyBy('id');
 
             $nextSortOrder = $action === 'move'
-                ? $this->nextSortOrder($targetListId)
+                ? $this->nextSortOrder($targetListId !== null ? (int) $targetListId : null)
                 : null;
 
             foreach ($ids as $id) {
-                /** @var Todo $todo */
                 $todo = $todos->get($id);
+
+                if (! $todo instanceof Todo) {
+                    continue;
+                }
 
                 switch ($action) {
                     case 'complete':
-                        $todo->complete();
+                        if (! $todo->is_completed) {
+                            $todo->complete();
+                        }
                         break;
-
                     case 'uncomplete':
-                        $todo->uncomplete();
+                        if ($todo->is_completed) {
+                            $todo->uncomplete();
+                        }
                         break;
-
                     case 'delete':
-                        $todo->moveToTrash();
+                        if (! $todo->is_deleted) {
+                            $todo->moveToTrash();
+                        }
                         break;
-
                     case 'restore':
-                        $todo->restore();
+                        if ($todo->is_deleted) {
+                            $todo->restore();
+                        }
                         break;
-
+                    case 'permanent_delete':
+                        $todo->delete();
+                        break;
                     case 'move':
-                        $this->moveTodoToList($todo, $targetListId, $nextSortOrder++);
+                        $todo->update([
+                            'todo_list_id' => $targetListId,
+                            'sort_order' => $nextSortOrder++,
+                        ]);
                         break;
-
                     case 'set_priority':
-                        $this->setTodoPriority($todo, $priority);
+                        $todo->update([
+                            'priority' => $priority,
+                        ]);
                         break;
                 }
             }
+
+            return $action === 'permanent_delete'
+                ? []
+                : $ids;
         });
 
-        return TodoResource::collection($this->findTodosByIds($ids));
+        if ($updatedIds === []) {
+            return response()->json([
+                'data' => [],
+            ]);
+        }
+
+        return response()->json([
+            'data' => TodoResource::collection(
+                Todo::query()
+                    ->select($this->todoColumns())
+                    ->with(['list:id,name,color,sort_order,created_at,updated_at'])
+                    ->whereIn('id', $updatedIds)
+                    ->ordered('manual')
+                    ->get(),
+            )->resolve($request),
+        ]);
     }
 
-    public function reorder(ReorderTodosRequest $request): JsonResponse
+    public function reorder(ReorderRequest $request): JsonResponse
     {
         DB::transaction(function () use ($request): void {
-            Todo::query()->upsert(
-                $request->validated('items'),
-                ['id'],
-                ['sort_order'],
-            );
+            foreach ($request->validated('items') as $item) {
+                Todo::query()
+                    ->where('id', $item['id'])
+                    ->update([
+                        'sort_order' => $item['sort_order'],
+                    ]);
+            }
         });
 
         return response()->json([
-            'message' => 'Todos reordered successfully.',
+            'message' => 'Todos reordered successfully',
         ]);
     }
 
     public function emptyTrash(): JsonResponse
     {
-        $deleted = DB::transaction(function (): int {
+        $count = DB::transaction(function (): int {
             $query = Todo::query()->inTrash();
             $count = $query->count();
             $query->delete();
@@ -217,150 +304,41 @@ class TodoController extends Controller
         });
 
         return response()->json([
-            'deleted' => $deleted,
+            'message' => $count.' tasks permanently deleted',
+            'count' => $count,
         ]);
     }
 
-    private function baseQuery()
+    /**
+     * @return array<int, string>
+     */
+    private function todoColumns(): array
     {
-        return Todo::query()
-            ->select([
-                'id',
-                'todo_list_id',
-                'title',
-                'description',
-                'is_completed',
-                'completed_at',
-                'priority',
-                'due_date',
-                'sort_order',
-                'is_deleted',
-                'deleted_at',
-                'created_at',
-                'updated_at',
-            ])
-            ->with([
-                'list:id,name,color,sort_order,created_at,updated_at',
-            ]);
-    }
-
-    private function applyFilters(FilterTodosRequest $request)
-    {
-        $query = $this->baseQuery();
-        $listId = $request->validated('list_id');
-        $status = $request->validated('status', 'all');
-        $dueDateFilter = $request->validated('due_date_filter');
-        $priorityFilter = $request->validated('priority_filter');
-        $search = $request->validated('search');
-
-        if ($listId === 'trash') {
-            $query->inTrash();
-        } elseif ($listId === 'today') {
-            $query->dueToday();
-        } elseif ($listId === null || $listId === 'all') {
-            $query->notInTrash();
-        } else {
-            $query
-                ->notInTrash()
-                ->where('todo_list_id', (int) $listId);
-        }
-
-        if ($listId !== 'trash') {
-            match ($status) {
-                'active' => $query->active(),
-                'completed' => $query->completed(),
-                default => null,
-            };
-
-            if (! in_array($listId, ['today'], true)) {
-                $query->byDueDateFilter($dueDateFilter);
-            }
-        }
-
-        $query
-            ->byPriority($priorityFilter)
-            ->search($search);
-
-        return $query;
-    }
-
-    private function paginatedTodos(FilterTodosRequest $request): LengthAwarePaginator
-    {
-        $query = $this->applyFilters($request);
-        $sortBy = $request->validated('sort_by', 'manual');
-
-        if ($sortBy === 'priority') {
-            return $this->paginateCollection(
-                $query->get()->sortByDesc(fn (Todo $todo) => $todo->priorityRank())->values(),
-                50,
-                $request,
-            );
-        }
-
-        match ($sortBy) {
-            'due_date' => $query->orderBy('due_date')->orderBy('sort_order'),
-            'title_asc' => $query->orderBy('title'),
-            'title_desc' => $query->orderByDesc('title'),
-            'created_at' => $query->orderByDesc('created_at'),
-            'completed_at' => $query->orderByDesc('completed_at'),
-            default => $query->orderBy('sort_order')->orderByDesc('created_at'),
-        };
-
-        return $query->paginate(50)->withQueryString();
-    }
-
-    private function paginateCollection(Collection $items, int $perPage, FilterTodosRequest $request): LengthAwarePaginator
-    {
-        $page = LengthAwarePaginator::resolveCurrentPage();
-
-        return new LengthAwarePaginator(
-            $items->forPage($page, $perPage)->values(),
-            $items->count(),
-            $perPage,
-            $page,
-            [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ],
-        );
+        return [
+            'id',
+            'todo_list_id',
+            'title',
+            'description',
+            'is_completed',
+            'completed_at',
+            'priority',
+            'due_date',
+            'sort_order',
+            'is_deleted',
+            'deleted_at',
+            'created_at',
+            'updated_at',
+        ];
     }
 
     private function nextSortOrder(?int $listId): int
     {
-        return (Todo::query()
-            ->notInTrash()
+        return ((int) (Todo::query()
             ->when(
                 $listId === null,
-                fn ($query) => $query->whereNull('todo_list_id'),
-                fn ($query) => $query->where('todo_list_id', $listId),
+                fn (Builder $query) => $query->whereNull('todo_list_id'),
+                fn (Builder $query) => $query->where('todo_list_id', $listId),
             )
-            ->max('sort_order') ?? -1) + 1;
-    }
-
-    private function moveTodoToList(Todo $todo, ?int $listId, int $sortOrder): void
-    {
-        $todo->todo_list_id = $listId;
-        $todo->sort_order = $sortOrder;
-        $todo->save();
-    }
-
-    private function setTodoPriority(Todo $todo, string $priority): void
-    {
-        $todo->priority = $priority;
-        $todo->save();
-    }
-
-    private function findTodo(int $id): Todo
-    {
-        return $this->baseQuery()->findOrFail($id);
-    }
-
-    private function findTodosByIds(array $ids): Collection
-    {
-        return $this->baseQuery()
-            ->whereKey($ids)
-            ->get()
-            ->sortBy(fn (Todo $todo) => array_search($todo->getKey(), $ids, true))
-            ->values();
+            ->max('sort_order') ?? -1)) + 1;
     }
 }

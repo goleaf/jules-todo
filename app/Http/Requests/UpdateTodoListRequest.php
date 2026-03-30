@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Models\TodoList;
-use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateTodoListRequest extends FormRequest
@@ -15,28 +14,57 @@ class UpdateTodoListRequest extends FormRequest
 
     public function rules(): array
     {
+        /** @var TodoList|null $list */
+        $list = $this->route('list');
+
         return [
-            'name' => ['sometimes', 'required', 'string', 'max:50', $this->uniqueNameRule()],
-            'color' => ['sometimes', 'nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'name' => [
+                'nullable',
+                'string',
+                'max:50',
+                function (string $attribute, mixed $value, \Closure $fail) use ($list): void {
+                    if ($value === null) {
+                        return;
+                    }
+
+                    $name = trim((string) $value);
+
+                    if ($name === '') {
+                        $fail('Please enter a list name.');
+
+                        return;
+                    }
+
+                    $exists = TodoList::query()
+                        ->whereKeyNot($list?->getKey())
+                        ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                        ->exists();
+
+                    if ($exists) {
+                        $fail('A list with this name already exists.');
+                    }
+                },
+            ],
+            'color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ];
     }
 
-    private function uniqueNameRule(): Closure
+    public function messages(): array
     {
-        return function (string $attribute, mixed $value, Closure $fail): void {
-            $normalized = mb_strtolower(trim((string) $value));
-            /** @var TodoList|null $current */
-            $current = $this->route('list');
+        return [
+            'name.string' => 'The list name must be a valid string.',
+            'name.max' => 'List names may not be longer than 50 characters.',
+            'color.string' => 'The list color must be a valid string.',
+            'color.regex' => 'Please choose a valid hex color like #6366f1.',
+        ];
+    }
 
-            $exists = TodoList::query()
-                ->select(['id', 'name'])
-                ->when($current, fn ($query) => $query->whereKeyNot($current->getKey()))
-                ->get()
-                ->contains(fn (TodoList $list) => mb_strtolower($list->name) === $normalized);
-
-            if ($exists) {
-                $fail('The name has already been taken.');
-            }
-        };
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('name') && $this->input('name') !== null) {
+            $this->merge([
+                'name' => trim((string) $this->input('name')),
+            ]);
+        }
     }
 }

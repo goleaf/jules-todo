@@ -3,7 +3,9 @@
 namespace App\Http\Middleware;
 
 use App\Http\Resources\TodoListResource;
+use App\Models\Todo;
 use App\Models\TodoList;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,22 +39,13 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'lists' => fn () => TodoListResource::collection(
-                TodoList::query()
-                    ->select([
-                        'id',
-                        'name',
-                        'color',
-                        'sort_order',
-                        'created_at',
-                        'updated_at',
-                    ])
-                    ->withCount([
-                        'todos as todos_count' => fn ($query) => $query->notInTrash(),
-                        'activeTodos as active_todos_count',
-                    ])
-                    ->ordered()
-                    ->get(),
+                TodoList::query()->forSidebar()->get(),
             )->resolve($request),
+            'virtual_lists' => [
+                ['id' => 'all', 'name' => 'All Tasks', 'icon' => 'layers'],
+                ['id' => 'today', 'name' => 'Today', 'icon' => 'sun'],
+                ['id' => 'trash', 'name' => 'Trash', 'icon' => 'trash-2'],
+            ],
             'default_lists' => [
                 ['id' => 'all', 'name' => 'All Tasks', 'icon' => 'layers'],
                 ['id' => 'today', 'name' => 'Today', 'icon' => 'sun'],
@@ -61,7 +54,16 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
+                'info' => fn () => $request->session()->get('info'),
             ],
+            'today_count' => fn () => Todo::query()
+                ->notInTrash()
+                ->where('is_completed', false)
+                ->whereDate('due_date', Carbon::today())
+                ->count(),
+            'trash_count' => fn () => Todo::query()
+                ->inTrash()
+                ->count(),
         ];
     }
 }

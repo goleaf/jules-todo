@@ -2,104 +2,110 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ReorderTodoListsRequest;
+use App\Http\Requests\ReorderRequest;
 use App\Http\Requests\StoreTodoListRequest;
 use App\Http\Requests\UpdateTodoListRequest;
 use App\Http\Resources\TodoListResource;
+use App\Models\Todo;
 use App\Models\TodoList;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class TodoListController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    private const DEFAULT_COLOR = '#6366f1';
+
+    private const NEW_LIST_COLOR_PALETTE = [
+        '#6366f1',
+        '#f59e0b',
+        '#10b981',
+        '#ef4444',
+        '#3b82f6',
+        '#8b5cf6',
+        '#ec4899',
+        '#14b8a6',
+        '#f97316',
+        '#06b6d4',
+        '#84cc16',
+        '#a855f7',
+    ];
+
+    public function index(Request $request): JsonResponse
     {
-        return TodoListResource::collection($this->baseQuery()->get());
+        return response()->json([
+            'lists' => TodoListResource::collection(
+                TodoList::query()->forSidebar()->get(),
+            )->resolve($request),
+        ]);
     }
 
-    public function store(StoreTodoListRequest $request): JsonResponse|RedirectResponse
+    public function store(StoreTodoListRequest $request): JsonResponse
     {
+        $validated = $request->validated();
+
         $list = TodoList::query()->create([
-            'name' => trim($request->validated('name')),
-            'color' => $request->validated('color') ?? '#6366f1',
-            'sort_order' => (TodoList::query()->max('sort_order') ?? -1) + 1,
+            'name' => $validated['name'],
+            'color' => $validated['color'] ?? $this->randomPaletteColor(),
+            'sort_order' => ((int) (TodoList::query()->max('sort_order') ?? 0)) + 1,
         ]);
 
-        if ($request->header('X-Inertia')) {
-            return redirect()
-                ->back()
-                ->with('success', 'List created successfully.');
-        }
-
-        return (new TodoListResource($this->baseQuery()->findOrFail($list->getKey())))
+        return (new TodoListResource(
+            TodoList::query()->forSidebar()->findOrFail($list->getKey()),
+        ))
             ->response()
             ->setStatusCode(201);
     }
 
-    public function show(TodoList $list): TodoListResource
+    public function update(UpdateTodoListRequest $request, TodoList $list): JsonResponse
     {
-        return new TodoListResource($this->baseQuery()->findOrFail($list->getKey()));
-    }
+        $validated = $request->validated();
 
-    public function update(UpdateTodoListRequest $request, TodoList $list): TodoListResource
-    {
-        $payload = $request->validated();
-
-        if (array_key_exists('name', $payload)) {
-            $payload['name'] = trim($payload['name']);
+        if (array_key_exists('color', $validated) && $validated['color'] === null) {
+            $validated['color'] = self::DEFAULT_COLOR;
         }
 
-        if (array_key_exists('color', $payload) && $payload['color'] === null) {
-            $payload['color'] = '#6366f1';
+        if ($validated !== []) {
+            $list->update($validated);
         }
 
-        $list->update($payload);
-
-        return new TodoListResource($this->baseQuery()->findOrFail($list->getKey()));
+        return (new TodoListResource(
+            TodoList::query()->forSidebar()->findOrFail($list->getKey()),
+        ))->response();
     }
 
     public function destroy(TodoList $list): JsonResponse
     {
         DB::transaction(function () use ($list): void {
-            $list->todos()->delete();
+            Todo::query()
+                ->where('todo_list_id', $list->getKey())
+                ->delete();
+
             $list->delete();
         });
 
         return response()->json(null, 204);
     }
 
-    public function reorder(ReorderTodoListsRequest $request): JsonResponse
+    public function reorder(ReorderRequest $request): JsonResponse
     {
         DB::transaction(function () use ($request): void {
-            TodoList::query()->upsert(
-                $request->validated('items'),
-                ['id'],
-                ['sort_order'],
-            );
+            foreach ($request->validated('items') as $item) {
+                TodoList::query()
+                    ->where('id', $item['id'])
+                    ->update([
+                        'sort_order' => $item['sort_order'],
+                    ]);
+            }
         });
 
         return response()->json([
-            'message' => 'Lists reordered successfully.',
+            'message' => 'Lists reordered successfully',
         ]);
     }
 
-    private function baseQuery()
+    private function randomPaletteColor(): string
     {
-        return TodoList::query()
-            ->select([
-                'id',
-                'name',
-                'color',
-                'sort_order',
-                'created_at',
-                'updated_at',
-            ])
-            ->withCount([
-                'todos as todos_count' => fn ($query) => $query->notInTrash(),
-                'activeTodos as active_todos_count',
-            ])
-            ->ordered();
+        return self::NEW_LIST_COLOR_PALETTE[array_rand(self::NEW_LIST_COLOR_PALETTE)];
     }
 }

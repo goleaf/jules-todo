@@ -23,7 +23,10 @@ class TodoResource extends JsonResource
             'deleted_at' => $this->resource->deleted_at?->toISOString(),
             'created_at' => $this->resource->created_at?->toISOString(),
             'updated_at' => $this->resource->updated_at?->toISOString(),
-            'list' => TodoListResource::make($this->whenLoaded('list')),
+            'list' => $this->whenLoaded(
+                'list',
+                fn () => new TodoListResource($this->resource->list),
+            ),
         ];
     }
 }

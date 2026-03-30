@@ -1,3 +1,266 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 239 84% 67%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 96%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 96%;
+        --muted-foreground: 215 16% 47%;
+        --accent: 226 100% 97%;
+        --accent-foreground: 226 71% 40%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 239 84% 67%;
+        --radius: 0.5rem;
+    }
+
+    .dark {
+        --background: 222 47% 9%;
+        --foreground: 213 31% 91%;
+        --card: 222 47% 11%;
+        --card-foreground: 213 31% 91%;
+        --popover: 222 47% 11%;
+        --popover-foreground: 213 31% 91%;
+        --primary: 239 84% 67%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 222 47% 15%;
+        --secondary-foreground: 213 31% 91%;
+        --muted: 222 47% 15%;
+        --muted-foreground: 215 16% 57%;
+        --accent: 226 71% 20%;
+        --accent-foreground: 226 100% 87%;
+        --destructive: 0 63% 31%;
+        --destructive-foreground: 0 86% 97%;
+        --border: 216 34% 17%;
+        --input: 216 34% 17%;
+        --ring: 239 84% 67%;
+    }
+
+    * {
+        @apply border-border;
+    }
+
+    html {
+        @apply bg-background text-foreground;
+        color-scheme: light;
+    }
+
+    html.dark {
+        color-scheme: dark;
+    }
+
+    body {
+        @apply min-h-dvh bg-background text-foreground antialiased;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    @keyframes fadeSlideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes fadeSlideUp {
+        from {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        to {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+    }
+
+    @keyframes collapseHeight {
+        from {
+            max-height: 1000px;
+            opacity: 1;
+        }
+
+        to {
+            max-height: 0;
+            opacity: 0;
+        }
+    }
+
+    @keyframes checkmarkStrikethrough {
+        from {
+            width: 0%;
+        }
+
+        to {
+            width: 100%;
+        }
+    }
+
+    @keyframes shakeBounce {
+        0% {
+            transform: translateX(0);
+        }
+
+        20% {
+            transform: translateX(-6px);
+        }
+
+        40% {
+            transform: translateX(6px);
+        }
+
+        60% {
+            transform: translateX(-4px);
+        }
+
+        80% {
+            transform: translateX(4px);
+        }
+
+        100% {
+            transform: translateX(0);
+        }
+    }
+
+    @keyframes sidebarSlideIn {
+        from {
+            transform: translateX(-100%);
+        }
+
+        to {
+            transform: translateX(0);
+        }
+    }
+
+    @keyframes sidebarSlideOut {
+        from {
+            transform: translateX(0);
+        }
+
+        to {
+            transform: translateX(-100%);
+        }
+    }
+
+    @keyframes detailPanelSlideIn {
+        from {
+            transform: translateX(100%);
+        }
+
+        to {
+            transform: translateX(0);
+        }
+    }
+
+    @keyframes detailPanelSlideOut {
+        from {
+            transform: translateX(0);
+        }
+
+        to {
+            transform: translateX(100%);
+        }
+    }
+
+    @keyframes bulkToolbarSlideUp {
+        from {
+            transform: translateY(100%);
+        }
+
+        to {
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes bulkToolbarSlideDown {
+        from {
+            transform: translateY(0);
+        }
+
+        to {
+            transform: translateY(100%);
+        }
+    }
+}
+
+@layer utilities {
+    .animate-fadeSlideDown,
+    .animate-fade-slide-down {
+        animation: fadeSlideDown 150ms ease-out both;
+    }
+
+    .animate-fadeSlideUp,
+    .animate-fade-slide-up {
+        animation: fadeSlideUp 150ms ease-in both;
+    }
+
+    .animate-shakeBounce,
+    .animate-shake-bounce {
+        animation: shakeBounce 400ms ease-in-out 1 both;
+    }
+
+    .animate-strikethrough,
+    .todo-title-strike {
+        position: relative;
+        text-decoration: none;
+    }
+
+    .animate-strikethrough::after,
+    .todo-title-strike::after {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        height: 1px;
+        width: 0%;
+        background: currentColor;
+        content: '';
+        transform: translateY(-50%);
+        transform-origin: left center;
+    }
+
+    [data-complete='true'] .animate-strikethrough::after,
+    [data-complete='true'] .todo-title-strike::after {
+        animation: checkmarkStrikethrough 200ms ease-out forwards;
+    }
+
+    [data-complete='false'] .animate-strikethrough::after,
+    [data-complete='false'] .todo-title-strike::after {
+        animation: checkmarkStrikethrough 200ms ease-out reverse forwards;
+    }
+
+    .animate-detail-slide-in {
+        animation: detailPanelSlideIn 250ms ease-out both;
+    }
+
+    .animate-bulk-slide-up {
+        animation: bulkToolbarSlideUp 200ms ease-out both;
+    }
+}

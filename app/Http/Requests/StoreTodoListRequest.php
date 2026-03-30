@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Models\TodoList;
-use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreTodoListRequest extends FormRequest
@@ -16,24 +15,47 @@ class StoreTodoListRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:50', $this->uniqueNameRule()],
+            'name' => [
+                'required',
+                'string',
+                'max:50',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $name = trim((string) $value);
+
+                    if ($name === '') {
+                        return;
+                    }
+
+                    $exists = TodoList::query()
+                        ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                        ->exists();
+
+                    if ($exists) {
+                        $fail('A list with this name already exists.');
+                    }
+                },
+            ],
             'color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ];
     }
 
-    private function uniqueNameRule(): Closure
+    public function messages(): array
     {
-        return function (string $attribute, mixed $value, Closure $fail): void {
-            $normalized = mb_strtolower(trim((string) $value));
+        return [
+            'name.required' => 'Please enter a list name.',
+            'name.string' => 'The list name must be a valid string.',
+            'name.max' => 'List names may not be longer than 50 characters.',
+            'color.string' => 'The list color must be a valid string.',
+            'color.regex' => 'Please choose a valid hex color like #6366f1.',
+        ];
+    }
 
-            $exists = TodoList::query()
-                ->select(['id', 'name'])
-                ->get()
-                ->contains(fn (TodoList $list) => mb_strtolower($list->name) === $normalized);
-
-            if ($exists) {
-                $fail('The name has already been taken.');
-            }
-        };
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('name')) {
+            $this->merge([
+                'name' => trim((string) $this->input('name')),
+            ]);
+        }
     }
 }
